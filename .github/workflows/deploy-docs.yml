@@ -27,11 +27,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # 预检查任务：检测并自动启用 GitHub Pages
-  ensure-pages:
+  # 预检查任务：检测 GitHub Pages 是否已启用
+  check-pages:
     runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
     steps:
-      - name: Check and enable GitHub Pages
+      - name: Check if GitHub Pages is enabled
+        id: check
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -42,37 +45,23 @@ jobs:
             "https://api.github.com/repos/${{ github.repository }}/pages")
 
           if [ "$HTTP_STATUS" = "200" ]; then
-            echo "✅ GitHub Pages is already enabled"
+            echo "✅ GitHub Pages is enabled"
+            echo "enabled=true" >> $GITHUB_OUTPUT
           else
-            echo "⚠️ GitHub Pages is not enabled (HTTP $HTTP_STATUS), enabling now..."
-
-            # 启用 GitHub Pages 并设置使用 GitHub Actions 构建
-            RESPONSE=$(curl -s -w "\n%{http_code}" \
-              -X POST \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${{ github.repository }}/pages" \
-              -d '{"build_type":"workflow"}')
-
-            BODY=$(echo "$RESPONSE" | sed '$d')
-            STATUS=$(echo "$RESPONSE" | tail -n1)
-
-            if [ "$STATUS" = "201" ]; then
-              echo "✅ GitHub Pages has been enabled with GitHub Actions build"
-              echo "::notice::GitHub Pages was automatically enabled for this repository"
-            elif [ "$STATUS" = "409" ]; then
-              echo "✅ GitHub Pages is already configured (conflict response)"
-            else
-              echo "❌ Failed to enable GitHub Pages (HTTP $STATUS)"
-              echo "Response: $BODY"
-              echo "::error::Failed to enable GitHub Pages. Please enable it manually in repository settings."
-              exit 1
-            fi
+            echo "enabled=false" >> $GITHUB_OUTPUT
+            echo ""
+            echo "::warning::GitHub Pages is not enabled. Deployment will be skipped."
+            echo ""
+            echo "To enable GitHub Pages:"
+            echo "  1. Go to repository Settings → Pages"
+            echo "  2. Under 'Build and deployment', select 'GitHub Actions' as source"
+            echo "  3. Re-run this workflow"
           fi
 
   # 构建任务
   build:
-    needs: ensure-pages
+    needs: check-pages
+    if: needs.check-pages.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -110,7 +99,8 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    needs: build
+    needs: [check-pages, build]
+    if: needs.check-pages.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     name: Deploy
     steps:
