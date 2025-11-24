@@ -97,6 +97,9 @@ jobs:
   # 部署任务
   deploy:
     environment:
+      # 如果 安装了 Github Actions 但是 Pages 未启用，这里有错误提示, 这是正常的, 请按以下步骤启用 GitHub Pages：
+      # 1. 进入仓库 Settings → Pages
+      # 2. 在 'Build and deployment' 下选择 'GitHub Actions' 作为构建源
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     needs: [check-pages, build]
